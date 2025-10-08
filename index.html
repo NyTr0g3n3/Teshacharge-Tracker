@@ -14,6 +14,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
@@ -484,6 +485,9 @@ html.dark #bottom-nav {
                 </button>
                 <button id="delete-all-data-btn" class="w-full text-left bg-gray-600 hover:bg-gray-700 text-white font-bold py-3 px-4 rounded-lg transition-colors duration-300">
                     <i class="fas fa-trash-alt mr-2"></i> Supprimer toutes les données
+                </button>
+                <button id="export-pdf-btn" class="w-full text-left bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-4 rounded-lg transition-colors duration-300">
+                    <i class="fas fa-file-pdf mr-2"></i> Exporter rapport PDF
                 </button>
             </div>
         </div>
@@ -1825,6 +1829,100 @@ function checkMilestones() {
             updateMileageForm();
         }
 
+    async function generatePDF() {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+    
+    const now = new Date().toLocaleDateString('fr-FR');
+    let y = 20;
+    
+    // Titre
+    doc.setFontSize(20);
+    doc.text('Rapport Tesla Charge', 20, y);
+    y += 10;
+    doc.setFontSize(10);
+    doc.text(`Généré le ${now}`, 20, y);
+    y += 15;
+    
+    // Stats globales
+    doc.setFontSize(14);
+    doc.text('Statistiques globales', 20, y);
+    y += 10;
+    doc.setFontSize(10);
+    
+    const totalCost = appState.charges.reduce((sum, c) => sum + (c.kwh * c.costPerKwh), 0);
+    const totalKwh = appState.charges.reduce((sum, c) => sum + c.kwh, 0);
+    const paidCharges = appState.charges.filter(c => c.costPerKwh > 0);
+    const avgCost = paidCharges.length > 0 ? paidCharges.reduce((sum, c) => sum + (c.kwh * c.costPerKwh), 0) / paidCharges.reduce((sum, c) => sum + c.kwh, 0) : 0;
+    
+    doc.text(`Coût total : ${formatCurrency(totalCost)}`, 20, y);
+    y += 7;
+    doc.text(`Total kWh : ${totalKwh.toFixed(2)} kWh`, 20, y);
+    y += 7;
+    doc.text(`Coût moyen : ${formatCurrency(avgCost)}/kWh`, 20, y);
+    y += 7;
+    doc.text(`Nombre de recharges : ${appState.charges.length}`, 20, y);
+    y += 15;
+    
+    // Top bornes
+    doc.setFontSize(14);
+    doc.text('Top 5 bornes les plus utilisées', 20, y);
+    y += 10;
+    doc.setFontSize(10);
+    
+    const stationStats = appState.charges.reduce((acc, c) => {
+        if (!acc[c.station]) acc[c.station] = { count: 0, cost: 0 };
+        acc[c.station].count++;
+        acc[c.station].cost += c.kwh * c.costPerKwh;
+        return acc;
+    }, {});
+    
+    const topStations = Object.entries(stationStats)
+        .sort((a, b) => b[1].count - a[1].count)
+        .slice(0, 5);
+    
+    topStations.forEach(([name, data]) => {
+        doc.text(`${name} : ${data.count} recharges (${formatCurrency(data.cost)})`, 25, y);
+        y += 7;
+    });
+    
+    // Nouvelle page pour les graphiques
+    doc.addPage();
+    y = 20;
+    
+    doc.setFontSize(14);
+    doc.text('Dépenses mensuelles', 20, y);
+    y += 10;
+    
+    // Capturer le graphique mensuel
+    const monthlyCanvas = document.getElementById('monthly-chart');
+    if (monthlyCanvas) {
+        const monthlyImg = monthlyCanvas.toDataURL('image/png');
+        doc.addImage(monthlyImg, 'PNG', 20, y, 170, 80);
+        y += 90;
+    }
+    
+    // Graphique par borne (nouvelle page si besoin)
+    if (y > 200) {
+        doc.addPage();
+        y = 20;
+    }
+    
+    doc.setFontSize(14);
+    doc.text('Répartition par borne', 20, y);
+    y += 10;
+    
+    const stationCanvas = document.getElementById('station-chart');
+    if (stationCanvas) {
+        const stationImg = stationCanvas.toDataURL('image/png');
+        doc.addImage(stationImg, 'PNG', 20, y, 170, 80);
+    }
+    
+    // Sauvegarder
+    doc.save(`tesla-charge-rapport-${now.replace(/\//g, '-')}.pdf`);
+    showToast('PDF généré avec graphiques');
+}
+        
         function updateMileageForm() {
             const selectedMonth = mileageMonthSelect.value.substring(0, 7);
             const existingStat = appState.monthlyStats.find(s => s.month.substring(0, 7) === selectedMonth);
@@ -2469,6 +2567,7 @@ const favData = {
                 }
             });
 
+            document.getElementById('export-pdf-btn')?.addEventListener('click', generatePDF);
             document.getElementById('cost-period-select').addEventListener('change', updateStats);
             document.getElementById('kwh-period-select').addEventListener('change', updateStats);
 
