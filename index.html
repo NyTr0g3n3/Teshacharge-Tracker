@@ -18,6 +18,8 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <script>
         tailwind.config = {
@@ -487,7 +489,7 @@ html.dark #bottom-nav {
                     <i class="fas fa-trash-alt mr-2"></i> Supprimer toutes les données
                 </button>
                 <button id="export-pdf-btn" class="w-full text-left bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-4 rounded-lg transition-colors duration-300">
-                    <i class="fas fa-file-pdf mr-2"></i> Exporter rapport PDF
+                    <i class="fas fa-file-pdf mr-2"></i> Exporter en PDF professionnel
                 </button>
             </div>
         </div>
@@ -2567,7 +2569,6 @@ const favData = {
                 }
             });
 
-            document.getElementById('export-pdf-btn')?.addEventListener('click', generatePDF);
             document.getElementById('cost-period-select').addEventListener('change', updateStats);
             document.getElementById('kwh-period-select').addEventListener('change', updateStats);
 
@@ -3027,6 +3028,696 @@ if (document.readyState === 'loading') {
     init();
 }
 
+const PDFExporter = {
+    async generatePDF(options) {
+        showLoader(true);
+        
+        try {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF('p', 'mm', 'a4');
+            
+            // Données filtrées par période
+            const filteredCharges = this.filterChargesByPeriod(
+                appState.charges, 
+                options.dateStart, 
+                options.dateEnd
+            );
+            
+            if (filteredCharges.length === 0) {
+                showToast("Aucune donnée pour la période sélectionnée", "error");
+                showLoader(false);
+                return;
+            }
+            
+            let yPos = 20;
+            const colorMode = options.colorMode;
+            
+            // En-tête
+            yPos = this.addHeader(doc, options, yPos, colorMode);
+            
+            // Résumé financier
+            if (options.includeSummary) {
+                yPos = await this.addFinancialSummary(doc, filteredCharges, yPos, colorMode);
+            }
+            
+            // Efficacité énergétique
+            if (options.includeEfficiency) {
+                yPos = await this.addEfficiencySection(doc, filteredCharges, options, yPos, colorMode);
+            }
+            
+            // Analyse par borne
+            if (options.includeStations) {
+                yPos = await this.addStationsAnalysis(doc, filteredCharges, yPos, colorMode);
+            }
+            
+            // Évolution mensuelle
+            if (options.includeMonthly) {
+                yPos = await this.addMonthlyEvolution(doc, filteredCharges, yPos, colorMode);
+            }
+            
+            // Détail des recharges
+            if (options.includeDetails) {
+                yPos = await this.addChargeDetails(doc, filteredCharges, yPos, colorMode);
+            }
+            
+            // Pied de page sur toutes les pages
+            this.addFooter(doc);
+            
+            // Téléchargement
+            const filename = `TeslaCharge_${options.dateStart}_${options.dateEnd}.pdf`;
+            doc.save(filename);
+            
+            showToast("PDF généré avec succès !");
+            showLoader(false);
+            
+        } catch (error) {
+            console.error("Erreur génération PDF:", error);
+            showToast("Erreur lors de la génération du PDF", "error");
+            showLoader(false);
+        }
+    },
+    
+    filterChargesByPeriod(charges, startDate, endDate) {
+        return charges.filter(c => c.date >= startDate && c.date <= endDate)
+                     .sort((a, b) => a.date.localeCompare(b.date));
+    },
+    
+    addHeader(doc, options, yPos, colorMode) {
+        // Logo Tesla (emoji lightning)
+        if (options.includeLogo) {
+            doc.setFillColor(colorMode ? 220 : 100, colorMode ? 38 : 100, colorMode ? 38 : 100);
+            doc.circle(15, yPos, 5, 'F');
+        }
+        
+        // Titre
+        doc.setTextColor(colorMode ? 220 : 0, colorMode ? 38 : 0, colorMode ? 38 : 0);
+        doc.setFontSize(22);
+        doc.setFont(undefined, 'bold');
+        doc.text('TeslaCharge Tracker', options.includeLogo ? 25 : 15, yPos + 2);
+        
+        // Sous-titre
+        doc.setFontSize(12);
+        doc.setTextColor(100, 100, 100);
+        doc.setFont(undefined, 'normal');
+        doc.text('Rapport d\'analyse de recharge', 15, yPos + 9);
+        
+        // Période
+        const startFormatted = new Date(options.dateStart).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+        const endFormatted = new Date(options.dateEnd).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+        doc.setFontSize(10);
+        doc.text(`Période: ${startFormatted} - ${endFormatted}`, 15, yPos + 15);
+        
+        // Date de génération
+        const today = new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+        doc.text(`Généré le: ${today}`, 15, yPos + 20);
+        
+        // Ligne de séparation
+        doc.setDrawColor(colorMode ? 220 : 150, colorMode ? 38 : 150, colorMode ? 38 : 150);
+        doc.setLineWidth(0.5);
+        doc.line(15, yPos + 23, 195, yPos + 23);
+        
+        return yPos + 30;
+    },
+    
+    async addFinancialSummary(doc, charges, yPos, colorMode) {
+        if (yPos > 240) {
+            doc.addPage();
+            yPos = 20;
+        }
+        
+        // Titre de section
+        doc.setFontSize(16);
+        doc.setFont(undefined, 'bold');
+        doc.setTextColor(colorMode ? 220 : 0, colorMode ? 38 : 0, colorMode ? 38 : 0);
+        doc.text('Résumé Financier', 15, yPos);
+        yPos += 10;
+        
+        // Calculs
+        const totalCost = charges.reduce((sum, c) => sum + (c.kwh * c.costPerKwh), 0);
+        const totalKwh = charges.reduce((sum, c) => sum + c.kwh, 0);
+        const paidCharges = charges.filter(c => c.costPerKwh > 0);
+        const avgCostPerKwh = paidCharges.length > 0 
+            ? paidCharges.reduce((sum, c) => sum + (c.kwh * c.costPerKwh), 0) / paidCharges.reduce((sum, c) => sum + c.kwh, 0)
+            : 0;
+        const nbCharges = charges.length;
+        const avgCostPerCharge = nbCharges > 0 ? totalCost / nbCharges : 0;
+        
+        // Carte de résumé
+        doc.setFillColor(colorMode ? 245 : 230, colorMode ? 245 : 230, colorMode ? 250 : 230);
+        doc.roundedRect(15, yPos, 180, 45, 3, 3, 'F');
+        
+        doc.setFontSize(11);
+        doc.setFont(undefined, 'bold');
+        doc.setTextColor(60, 60, 60);
+        
+        const metrics = [
+            { label: 'Coût total', value: `${totalCost.toFixed(2)} €`, x: 20, y: yPos + 8 },
+            { label: 'Énergie totale', value: `${totalKwh.toFixed(2)} kWh`, x: 20, y: yPos + 18 },
+            { label: 'Nombre de recharges', value: nbCharges, x: 20, y: yPos + 28 },
+            { label: 'Coût moyen/kWh', value: `${avgCostPerKwh.toFixed(3)} €`, x: 110, y: yPos + 8 },
+            { label: 'Coût moyen/recharge', value: `${avgCostPerCharge.toFixed(2)} €`, x: 110, y: yPos + 18 },
+            { label: 'Économies (vs essence)', value: this.calculateSavings(totalKwh), x: 110, y: yPos + 28 }
+        ];
+        
+        metrics.forEach(m => {
+            doc.setFont(undefined, 'normal');
+            doc.setFontSize(9);
+            doc.setTextColor(100, 100, 100);
+            doc.text(m.label, m.x, m.y);
+            
+            doc.setFont(undefined, 'bold');
+            doc.setFontSize(11);
+            doc.setTextColor(colorMode ? 220 : 50, colorMode ? 38 : 50, colorMode ? 38 : 50);
+            doc.text(String(m.value), m.x, m.y + 5);
+        });
+        
+        return yPos + 55;
+    },
+    
+    calculateSavings(totalKwh) {
+        const kmEquivalent = totalKwh * 6.67;
+        const litersEquivalent = (kmEquivalent / 100) * 7;
+        const gasolineCost = litersEquivalent * 1.8;
+        const electricCost = totalKwh * 0.25;
+        const savings = gasolineCost - electricCost;
+        return `~${savings.toFixed(0)} €`;
+    },
+    
+    async addEfficiencySection(doc, charges, options, yPos, colorMode) {
+        if (yPos > 200) {
+            doc.addPage();
+            yPos = 20;
+        }
+        
+        doc.setFontSize(16);
+        doc.setFont(undefined, 'bold');
+        doc.setTextColor(colorMode ? 220 : 0, colorMode ? 38 : 0, colorMode ? 38 : 0);
+        doc.text('Efficacité Énergétique', 15, yPos);
+        yPos += 10;
+        
+        const monthlyData = this.getMonthlyEfficiency(charges, options.dateStart, options.dateEnd);
+        
+        if (monthlyData.length === 0) {
+            doc.setFontSize(10);
+            doc.setTextColor(150, 150, 150);
+            doc.text('Aucune donnée de kilométrage disponible pour cette période.', 15, yPos);
+            return yPos + 10;
+        }
+        
+        // Tableau
+        doc.setFillColor(240, 240, 240);
+        doc.rect(15, yPos, 180, 8, 'F');
+        
+        doc.setFontSize(9);
+        doc.setFont(undefined, 'bold');
+        doc.setTextColor(60, 60, 60);
+        doc.text('Mois', 20, yPos + 5);
+        doc.text('km parcourus', 70, yPos + 5);
+        doc.text('kWh consommés', 115, yPos + 5);
+        doc.text('Efficacité', 165, yPos + 5);
+        yPos += 8;
+        
+        monthlyData.forEach((month, index) => {
+            if (yPos > 270) {
+                doc.addPage();
+                yPos = 20;
+            }
+            
+            if (index % 2 === 0) {
+                doc.setFillColor(250, 250, 250);
+                doc.rect(15, yPos, 180, 7, 'F');
+            }
+            
+            doc.setFont(undefined, 'normal');
+            doc.setFontSize(9);
+            doc.setTextColor(60, 60, 60);
+            doc.text(month.monthName, 20, yPos + 5);
+            doc.text(month.kmDriven > 0 ? `${month.kmDriven} km` : '-', 70, yPos + 5);
+            doc.text(`${month.kwh.toFixed(1)} kWh`, 115, yPos + 5);
+            
+            doc.setFont(undefined, 'bold');
+            doc.setTextColor(colorMode ? 34 : 50, colorMode ? 139 : 50, colorMode ? 34 : 50);
+            doc.text(month.efficiency > 0 ? `${month.efficiency.toFixed(2)} km/kWh` : '-', 165, yPos + 5);
+            
+            yPos += 7;
+        });
+        
+        const avgEfficiency = monthlyData.reduce((sum, m) => sum + (m.efficiency || 0), 0) / monthlyData.filter(m => m.efficiency > 0).length;
+        
+        yPos += 5;
+        doc.setFillColor(colorMode ? 220 : 200, colorMode ? 38 : 200, colorMode ? 38 : 200);
+        doc.roundedRect(15, yPos, 180, 10, 2, 2, 'F');
+        doc.setFontSize(10);
+        doc.setFont(undefined, 'bold');
+        doc.setTextColor(255, 255, 255);
+        doc.text(`Efficacité moyenne: ${avgEfficiency.toFixed(2)} km/kWh`, 20, yPos + 6);
+        
+        return yPos + 18;
+    },
+    
+    getMonthlyEfficiency(charges, startDate, endDate) {
+        const monthlyData = {};
+        
+        charges.forEach(c => {
+            const month = c.date.substring(0, 7);
+            if (!monthlyData[month]) {
+                monthlyData[month] = { kwh: 0, kmDriven: 0 };
+            }
+            monthlyData[month].kwh += c.kwh;
+        });
+        
+        const relevantStats = appState.monthlyStats
+            .filter(s => s.month >= startDate && s.month <= endDate)
+            .sort((a, b) => a.month.localeCompare(b.month));
+        
+        relevantStats.forEach((stat, index) => {
+            const month = stat.month.substring(0, 7);
+            if (monthlyData[month]) {
+                const prevStat = relevantStats[index - 1];
+                if (prevStat) {
+                    monthlyData[month].kmDriven = stat.endOfMonthMileage - prevStat.endOfMonthMileage;
+                }
+            }
+        });
+        
+        return Object.keys(monthlyData).sort().map(month => ({
+            monthName: new Date(month + '-01').toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' }),
+            kwh: monthlyData[month].kwh,
+            kmDriven: monthlyData[month].kmDriven,
+            efficiency: monthlyData[month].kmDriven > 0 ? monthlyData[month].kmDriven / monthlyData[month].kwh : 0
+        }));
+    },
+    
+    async addStationsAnalysis(doc, charges, yPos, colorMode) {
+        if (yPos > 200) {
+            doc.addPage();
+            yPos = 20;
+        }
+        
+        doc.setFontSize(16);
+        doc.setFont(undefined, 'bold');
+        doc.setTextColor(colorMode ? 220 : 0, colorMode ? 38 : 0, colorMode ? 38 : 0);
+        doc.text('Analyse par Borne', 15, yPos);
+        yPos += 10;
+        
+        const stationStats = {};
+        charges.forEach(c => {
+            if (!stationStats[c.station]) {
+                stationStats[c.station] = { visits: 0, totalCost: 0, totalKwh: 0 };
+            }
+            stationStats[c.station].visits++;
+            stationStats[c.station].totalCost += c.kwh * c.costPerKwh;
+            stationStats[c.station].totalKwh += c.kwh;
+        });
+        
+        const sortedStations = Object.entries(stationStats)
+            .sort((a, b) => b[1].totalCost - a[1].totalCost)
+            .slice(0, 10);
+        
+        doc.setFillColor(240, 240, 240);
+        doc.rect(15, yPos, 180, 8, 'F');
+        
+        doc.setFontSize(9);
+        doc.setFont(undefined, 'bold');
+        doc.setTextColor(60, 60, 60);
+        doc.text('Borne', 20, yPos + 5);
+        doc.text('Visites', 90, yPos + 5);
+        doc.text('kWh', 120, yPos + 5);
+        doc.text('Coût total', 150, yPos + 5);
+        doc.text('€/kWh', 175, yPos + 5);
+        yPos += 8;
+        
+        sortedStations.forEach(([station, stats], index) => {
+            if (yPos > 270) {
+                doc.addPage();
+                yPos = 20;
+            }
+            
+            if (index % 2 === 0) {
+                doc.setFillColor(250, 250, 250);
+                doc.rect(15, yPos, 180, 7, 'F');
+            }
+            
+            const avgCost = stats.totalKwh > 0 ? stats.totalCost / stats.totalKwh : 0;
+            const stationName = station.length > 30 ? station.substring(0, 27) + '...' : station;
+            
+            doc.setFont(undefined, 'normal');
+            doc.setFontSize(8);
+            doc.setTextColor(60, 60, 60);
+            doc.text(stationName, 20, yPos + 5);
+            doc.text(String(stats.visits), 90, yPos + 5);
+            doc.text(`${stats.totalKwh.toFixed(1)}`, 120, yPos + 5);
+            doc.text(`${stats.totalCost.toFixed(2)} €`, 150, yPos + 5);
+            
+            if (avgCost === 0) doc.setTextColor(34, 139, 34);
+            else if (avgCost < 0.25) doc.setTextColor(0, 100, 200);
+            else if (avgCost < 0.40) doc.setTextColor(200, 150, 0);
+            else doc.setTextColor(200, 0, 0);
+            doc.text(`${avgCost.toFixed(3)}`, 175, yPos + 5);
+            
+            yPos += 7;
+        });
+        
+        return yPos + 10;
+    },
+    
+    async addMonthlyEvolution(doc, charges, yPos, colorMode) {
+        if (yPos > 200) {
+            doc.addPage();
+            yPos = 20;
+        }
+        
+        doc.setFontSize(16);
+        doc.setFont(undefined, 'bold');
+        doc.setTextColor(colorMode ? 220 : 0, colorMode ? 38 : 0, colorMode ? 38 : 0);
+        doc.text('Évolution Mensuelle', 15, yPos);
+        yPos += 10;
+        
+        const monthlyData = {};
+        charges.forEach(c => {
+            const month = c.date.substring(0, 7);
+            if (!monthlyData[month]) {
+                monthlyData[month] = { cost: 0, kwh: 0, count: 0 };
+            }
+            monthlyData[month].cost += c.kwh * c.costPerKwh;
+            monthlyData[month].kwh += c.kwh;
+            monthlyData[month].count++;
+        });
+        
+        const sortedMonths = Object.keys(monthlyData).sort();
+        
+        doc.setFillColor(240, 240, 240);
+        doc.rect(15, yPos, 180, 8, 'F');
+        
+        doc.setFontSize(9);
+        doc.setFont(undefined, 'bold');
+        doc.setTextColor(60, 60, 60);
+        doc.text('Mois', 20, yPos + 5);
+        doc.text('Recharges', 80, yPos + 5);
+        doc.text('kWh', 120, yPos + 5);
+        doc.text('Coût', 150, yPos + 5);
+        doc.text('€/kWh', 175, yPos + 5);
+        yPos += 8;
+        
+        sortedMonths.forEach((month, index) => {
+            if (yPos > 270) {
+                doc.addPage();
+                yPos = 20;
+            }
+            
+            if (index % 2 === 0) {
+                doc.setFillColor(250, 250, 250);
+                doc.rect(15, yPos, 180, 7, 'F');
+            }
+            
+            const data = monthlyData[month];
+            const avgCost = data.kwh > 0 ? data.cost / data.kwh : 0;
+            const monthName = new Date(month + '-01').toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+            
+            doc.setFont(undefined, 'normal');
+            doc.setFontSize(9);
+            doc.setTextColor(60, 60, 60);
+            doc.text(monthName, 20, yPos + 5);
+            doc.text(String(data.count), 80, yPos + 5);
+            doc.text(`${data.kwh.toFixed(1)}`, 120, yPos + 5);
+            doc.text(`${data.cost.toFixed(2)} €`, 150, yPos + 5);
+            doc.text(`${avgCost.toFixed(3)}`, 175, yPos + 5);
+            
+            yPos += 7;
+        });
+        
+        return yPos + 10;
+    },
+    
+    async addChargeDetails(doc, charges, yPos, colorMode) {
+        if (yPos > 200) {
+            doc.addPage();
+            yPos = 20;
+        }
+        
+        doc.setFontSize(16);
+        doc.setFont(undefined, 'bold');
+        doc.setTextColor(colorMode ? 220 : 0, colorMode ? 38 : 0, colorMode ? 38 : 0);
+        doc.text('Détail des Recharges', 15, yPos);
+        yPos += 5;
+        
+        doc.setFontSize(9);
+        doc.setTextColor(150, 150, 150);
+        doc.text(`${charges.length} recharge(s) sur la période`, 15, yPos + 5);
+        yPos += 12;
+        
+        doc.setFillColor(240, 240, 240);
+        doc.rect(15, yPos, 180, 8, 'F');
+        
+        doc.setFontSize(8);
+        doc.setFont(undefined, 'bold');
+        doc.setTextColor(60, 60, 60);
+        doc.text('Date', 20, yPos + 5);
+        doc.text('Borne', 50, yPos + 5);
+        doc.text('kWh', 120, yPos + 5);
+        doc.text('€/kWh', 145, yPos + 5);
+        doc.text('Coût', 170, yPos + 5);
+        yPos += 8;
+        
+        charges.forEach((charge, index) => {
+            if (yPos > 275) {
+                doc.addPage();
+                yPos = 20;
+                
+                doc.setFillColor(240, 240, 240);
+                doc.rect(15, yPos, 180, 8, 'F');
+                doc.setFontSize(8);
+                doc.setFont(undefined, 'bold');
+                doc.setTextColor(60, 60, 60);
+                doc.text('Date', 20, yPos + 5);
+                doc.text('Borne', 50, yPos + 5);
+                doc.text('kWh', 120, yPos + 5);
+                doc.text('€/kWh', 145, yPos + 5);
+                doc.text('Coût', 170, yPos + 5);
+                yPos += 8;
+            }
+            
+            if (index % 2 === 0) {
+                doc.setFillColor(250, 250, 250);
+                doc.rect(15, yPos, 180, 6, 'F');
+            }
+            
+            const date = new Date(charge.date).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' });
+            const stationName = charge.station.length > 25 ? charge.station.substring(0, 22) + '...' : charge.station;
+            const cost = charge.kwh * charge.costPerKwh;
+            
+            doc.setFont(undefined, 'normal');
+            doc.setFontSize(8);
+            doc.setTextColor(60, 60, 60);
+            doc.text(date, 20, yPos + 4);
+            doc.text(stationName, 50, yPos + 4);
+            doc.text(`${charge.kwh.toFixed(1)}`, 120, yPos + 4);
+            doc.text(`${charge.costPerKwh.toFixed(3)}`, 145, yPos + 4);
+            doc.text(`${cost.toFixed(2)} €`, 170, yPos + 4);
+            
+            yPos += 6;
+        });
+        
+        return yPos + 10;
+    },
+    
+    addFooter(doc) {
+        const pageCount = doc.internal.getNumberOfPages();
+        
+        for (let i = 1; i <= pageCount; i++) {
+            doc.setPage(i);
+            doc.setDrawColor(200, 200, 200);
+            doc.setLineWidth(0.3);
+            doc.line(15, 285, 195, 285);
+            doc.setFontSize(8);
+            doc.setTextColor(150, 150, 150);
+            doc.text('TeslaCharge Tracker - Rapport généré automatiquement', 15, 290);
+            doc.text(`Page ${i} / ${pageCount}`, 180, 290);
+        }
+    }
+};
+
+// Event listeners
+document.getElementById('export-pdf-btn').addEventListener('click', () => {
+    document.getElementById('pdf-export-modal').classList.remove('hidden');
+    const today = new Date();
+    const lastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+    document.getElementById('pdf-date-end').value = today.toISOString().split('T')[0];
+    document.getElementById('pdf-date-start').value = lastMonth.toISOString().split('T')[0];
+});
+
+document.getElementById('close-pdf-modal').addEventListener('click', () => {
+    document.getElementById('pdf-export-modal').classList.add('hidden');
+});
+
+document.getElementById('cancel-pdf-export').addEventListener('click', () => {
+    document.getElementById('pdf-export-modal').classList.add('hidden');
+});
+
+document.querySelectorAll('.pdf-period-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        const period = btn.dataset.period;
+        const today = new Date();
+        let startDate;
+        
+        switch(period) {
+            case 'month':
+                startDate = new Date(today.getFullYear(), today.getMonth(), 1);
+                break;
+            case '3months':
+                startDate = new Date(today.getFullYear(), today.getMonth() - 2, 1);
+                break;
+            case '6months':
+                startDate = new Date(today.getFullYear(), today.getMonth() - 5, 1);
+                break;
+            case 'year':
+                startDate = new Date(today.getFullYear(), 0, 1);
+                break;
+            case 'all':
+                if (appState.charges.length > 0) {
+                    const sortedCharges = [...appState.charges].sort((a, b) => a.date.localeCompare(b.date));
+                    startDate = new Date(sortedCharges[0].date);
+                } else {
+                    startDate = new Date(today.getFullYear(), 0, 1);
+                }
+                break;
+        }
+        
+        document.getElementById('pdf-date-start').value = startDate.toISOString().split('T')[0];
+        document.getElementById('pdf-date-end').value = today.toISOString().split('T')[0];
+    });
+});
+
+document.getElementById('pdf-export-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    if (!appState.firebase.userId) {
+        showToast("Veuillez vous connecter d'abord.", "error");
+        return;
+    }
+    
+    const options = {
+        dateStart: document.getElementById('pdf-date-start').value,
+        dateEnd: document.getElementById('pdf-date-end').value,
+        includeSummary: document.getElementById('pdf-include-summary').checked,
+        includeEfficiency: document.getElementById('pdf-include-efficiency').checked,
+        includeStations: document.getElementById('pdf-include-stations').checked,
+        includeMonthly: document.getElementById('pdf-include-monthly').checked,
+        includeDetails: document.getElementById('pdf-include-details').checked,
+        colorMode: document.getElementById('pdf-color-mode').checked,
+        includeLogo: document.getElementById('pdf-include-logo').checked
+    };
+    
+    if (options.dateStart > options.dateEnd) {
+        showToast("La date de début doit être antérieure à la date de fin", "error");
+        return;
+    }
+    
+    document.getElementById('pdf-export-modal').classList.add('hidden');
+    await PDFExporter.generatePDF(options);
+});
+        
     </script>
+
+    <div id="pdf-export-modal" class="fixed inset-0 bg-black bg-opacity-75 hidden z-50 flex items-center justify-center p-4">
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <div class="p-6 border-b border-gray-200 dark:border-gray-700 sticky top-0 bg-white dark:bg-gray-800 z-10">
+            <div class="flex justify-between items-center">
+                <h2 class="text-2xl font-bold text-gray-900 dark:text-white">
+                    <i class="fas fa-file-pdf text-red-600 mr-2"></i>
+                    Export PDF Professionnel
+                </h2>
+                <button id="close-pdf-modal" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+                    <i class="fas fa-times text-2xl"></i>
+                </button>
+            </div>
+        </div>
+        
+        <form id="pdf-export-form" class="p-6 space-y-6">
+            <!-- Période -->
+            <div class="bg-gray-50 dark:bg-gray-900/50 p-4 rounded-lg">
+                <h3 class="font-semibold text-gray-900 dark:text-white mb-3 flex items-center">
+                    <i class="fas fa-calendar-alt text-blue-600 mr-2"></i>
+                    Période d'analyse
+                </h3>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm text-gray-600 dark:text-gray-400 mb-2">Début</label>
+                        <input type="date" id="pdf-date-start" class="w-full bg-white dark:bg-gray-800 text-gray-900 dark:text-white p-2 rounded border border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-red-500" required>
+                    </div>
+                    <div>
+                        <label class="block text-sm text-gray-600 dark:text-gray-400 mb-2">Fin</label>
+                        <input type="date" id="pdf-date-end" class="w-full bg-white dark:bg-gray-800 text-gray-900 dark:text-white p-2 rounded border border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-red-500" required>
+                    </div>
+                </div>
+                <div class="flex gap-2 mt-3 flex-wrap">
+                    <button type="button" class="pdf-period-btn text-xs bg-gray-200 dark:bg-gray-700 px-3 py-1 rounded hover:bg-red-600 hover:text-white transition-colors" data-period="month">Ce mois</button>
+                    <button type="button" class="pdf-period-btn text-xs bg-gray-200 dark:bg-gray-700 px-3 py-1 rounded hover:bg-red-600 hover:text-white transition-colors" data-period="3months">3 mois</button>
+                    <button type="button" class="pdf-period-btn text-xs bg-gray-200 dark:bg-gray-700 px-3 py-1 rounded hover:bg-red-600 hover:text-white transition-colors" data-period="6months">6 mois</button>
+                    <button type="button" class="pdf-period-btn text-xs bg-gray-200 dark:bg-gray-700 px-3 py-1 rounded hover:bg-red-600 hover:text-white transition-colors" data-period="year">Cette année</button>
+                    <button type="button" class="pdf-period-btn text-xs bg-gray-200 dark:bg-gray-700 px-3 py-1 rounded hover:bg-red-600 hover:text-white transition-colors" data-period="all">Tout</button>
+                </div>
+            </div>
+
+            <!-- Sections à inclure -->
+            <div class="bg-gray-50 dark:bg-gray-900/50 p-4 rounded-lg">
+                <h3 class="font-semibold text-gray-900 dark:text-white mb-3 flex items-center">
+                    <i class="fas fa-list-check text-green-600 mr-2"></i>
+                    Sections à inclure
+                </h3>
+                <div class="space-y-2">
+                    <label class="flex items-center gap-2 cursor-pointer p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded">
+                        <input type="checkbox" id="pdf-include-summary" checked class="w-4 h-4 text-red-600 rounded focus:ring-red-500">
+                        <span class="text-gray-900 dark:text-white">📊 Résumé financier</span>
+                    </label>
+                    <label class="flex items-center gap-2 cursor-pointer p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded">
+                        <input type="checkbox" id="pdf-include-efficiency" checked class="w-4 h-4 text-red-600 rounded focus:ring-red-500">
+                        <span class="text-gray-900 dark:text-white">⚡ Efficacité énergétique (km/kWh)</span>
+                    </label>
+                    <label class="flex items-center gap-2 cursor-pointer p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded">
+                        <input type="checkbox" id="pdf-include-stations" checked class="w-4 h-4 text-red-600 rounded focus:ring-red-500">
+                        <span class="text-gray-900 dark:text-white">🔌 Analyse par borne</span>
+                    </label>
+                    <label class="flex items-center gap-2 cursor-pointer p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded">
+                        <input type="checkbox" id="pdf-include-monthly" checked class="w-4 h-4 text-red-600 rounded focus:ring-red-500">
+                        <span class="text-gray-900 dark:text-white">📈 Évolution mensuelle</span>
+                    </label>
+                    <label class="flex items-center gap-2 cursor-pointer p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded">
+                        <input type="checkbox" id="pdf-include-details" class="w-4 h-4 text-red-600 rounded focus:ring-red-500">
+                        <span class="text-gray-900 dark:text-white">📋 Détail des recharges</span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Options avancées -->
+            <div class="bg-gray-50 dark:bg-gray-900/50 p-4 rounded-lg">
+                <h3 class="font-semibold text-gray-900 dark:text-white mb-3 flex items-center">
+                    <i class="fas fa-sliders-h text-purple-600 mr-2"></i>
+                    Options avancées
+                </h3>
+                <div class="space-y-2">
+                    <label class="flex items-center gap-2 cursor-pointer p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded">
+                        <input type="checkbox" id="pdf-color-mode" checked class="w-4 h-4 text-red-600 rounded focus:ring-red-500">
+                        <span class="text-gray-900 dark:text-white">🎨 Mode couleur (décocher pour économiser l'encre)</span>
+                    </label>
+                    <label class="flex items-center gap-2 cursor-pointer p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded">
+                        <input type="checkbox" id="pdf-include-logo" checked class="w-4 h-4 text-red-600 rounded focus:ring-red-500">
+                        <span class="text-gray-900 dark:text-white">🚗 Inclure le logo Tesla</span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Actions -->
+            <div class="flex gap-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                <button type="button" id="cancel-pdf-export" class="flex-1 bg-gray-600 hover:bg-gray-700 text-white font-bold py-3 px-4 rounded-lg transition-colors">
+                    Annuler
+                </button>
+                <button type="submit" class="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-lg transition-colors">
+                    <i class="fas fa-download mr-2"></i> Générer le PDF
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
 </body>
 </html>
