@@ -293,74 +293,56 @@ input:focus, select:focus {
             100% { transform: rotate(360deg); }
         }
         
-/* Bottom Sheet Modal - iOS FIXED */
-#modal {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
-  background: rgba(0,0,0,0.7);
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  z-index: 9999;
-  overflow: hidden;
-}
+        /* Bottom Sheet Modal */
+        @media (max-width: 768px) {
+            #modal.active .modal-content {
+                animation: slide-up 0.3s ease-out forwards;
+            }
+            #modal .modal-content {
+                animation: slide-down 0.3s ease-out forwards;
+            }
+            @keyframes slide-up {
+                from { transform: translateY(100%); }
+                to { transform: translateY(0); }
+            }
+            @keyframes slide-down {
+                from { transform: translateY(0); }
+                to { transform: translateY(100%); }
+            }
+        }
+        
+        /* Swipe to delete */
+        .swipe-container {
+            overflow: hidden;
+            position: relative;
+        }
+        .swipe-content {
+            will-change: transform;
+            transition: transform 0.3s ease-out;
+            cursor: grab;
+        }
+        .swipe-actions {
+            position: absolute;
+            top: 0;
+            right: 0;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            transform: translateX(100%);
+        }
 
-#modal:not(.hidden) {
-    display: flex !important;
-}
+        .date-filter-btn.active {
+            background-color: #DC2626;
+            color: white;
+        }
 
-#modal-content {
-  width: 100vw;
-  border-radius: 1rem 1rem 0 0;
-  max-height: 85vh;
-  overflow-y: auto;
-  touch-action: pan-y;              /* Sécurise le scroll vertical, interdit le horizontal */
-  overscroll-behavior: contain;     /* Empêche le scroll de déborder sur l’arrière-plan */
-}
-
-body.modal-open {
-  overflow: hidden !important;
-  position: fixed !important;
-  width: 100vw !important;
-  height: 100vh !important;
-}
-
-
-html.dark #modal-content {
-    background: #1f2937;
-}
-
-#modal.active #modal-content {
-    transform: translateY(0);
-}
-
-/* Desktop: Modal centrée */
-@media (min-width: 769px) {
-    #modal {
-        align-items: center;
-        padding: 1rem;
-    }
-    
+        /* Correction modal iPhone */
+@media (max-width: 768px) {
     #modal-content {
-        max-width: 28rem;
-        border-radius: 0.5rem;
-        padding: 2rem;
-        max-height: 90vh;
-        transform: none;
+        max-height: 90vh !important;
+        overflow-y: auto !important;
+        -webkit-overflow-scrolling: touch !important;
     }
-}
-
-/* Bloquer le scroll */
-body.modal-open {
-    overflow: hidden !important;
-    position: fixed !important;
-    width: 100% !important;
-    height: 100% !important;
-    top: 0 !important;
-    left: 0 !important;
 }
 
         /* Bottom Navigation Bar (Mobile only) */
@@ -782,8 +764,9 @@ html.dark #bottom-nav {
 </div>
 
     <!-- Modal / Bottom Sheet -->
-    <div id="modal" class="fixed inset-0 z-50 hidden">
-        <div id="modal-content">
+    <div id="modal-overlay" class="fixed inset-0 bg-black bg-opacity-75 hidden z-40"></div>
+    <div id="modal" class="fixed inset-0 flex items-end md:items-center justify-center md:p-4 z-50 pointer-events-none hidden [&.active]:pointer-events-auto">
+         <div id="modal-content" class="modal-content bg-white dark:bg-gray-800 md:rounded-lg shadow-2xl w-full max-w-md p-6 md:p-8 fixed bottom-0 md:relative md:bottom-auto rounded-t-lg pointer-events-auto">
             <h2 id="modal-title" class="text-2xl font-bold text-gray-900 dark:text-white mb-6">Ajouter une recharge</h2>
             <form id="charge-form">
                 <div class="mb-4">
@@ -1177,18 +1160,9 @@ window.nav = function(app, lat, lon) {
             applyTheme(newTheme);
         }
 function openModal(charge = null) {
-    // Bloquer le scroll du body
-    document.body.classList.add('modal-open');
-    
     modal.classList.remove('hidden');
-    
-    // Petit délai pour l'animation
-    requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-            modal.classList.add('active');
-        });
-    });
-
+    modal.classList.add('active');
+    modalOverlay.classList.remove('hidden');
     
     document.getElementById('modal-title').textContent = charge ? 'Modifier la recharge' : 'Ajouter une recharge';
     deleteBtnModal.classList.toggle('hidden', !charge);
@@ -1235,14 +1209,9 @@ function openModal(charge = null) {
 }
 
 function closeModal() {
+    modal.classList.add('hidden');
     modal.classList.remove('active');
-    
-    // Attendre la fin de l'animation
-    setTimeout(() => {
-        modal.classList.add('hidden');
-        document.body.classList.remove('modal-open');
-    }, 300);
-    
+    modalOverlay.classList.add('hidden');
     chargeForm.reset();
     modalFavoritesSelect.selectedIndex = 0;
     currentPhotoBase64 = null;
