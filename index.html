@@ -293,91 +293,68 @@ input:focus, select:focus {
             100% { transform: rotate(360deg); }
         }
         
-/* Bottom Sheet Modal */
+/* Bottom Sheet Modal - FIXED VERSION */
 #modal {
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    display: none;
     background-color: rgba(0, 0, 0, 0.75);
+    align-items: flex-end;
+    justify-content: center;
+    padding: 0;
 }
 
-#modal.hidden {
-    display: none;
+#modal:not(.hidden) {
+    display: flex !important;
 }
 
 #modal-content {
     position: relative;
-    touch-action: pan-y; /* Permet le scroll vertical mais pas le drag horizontal */
-    overscroll-behavior: contain; /* Empêche le scroll de déborder sur le body */
+    background: white;
+    border-radius: 1rem 1rem 0 0;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+    width: 100%;
+    max-width: 100%;
+    padding: 1.5rem;
+    max-height: 90vh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+    transform: translateY(100%);
+    transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1);
 }
 
-/* Mobile: Bottom Sheet */
-@media (max-width: 768px) {
-    #modal {
-        align-items: flex-end;
-        padding: 0;
-    }
-    
-    #modal-content {
-        position: fixed;
-        bottom: 0;
-        left: 0;
-        right: 0;
-        max-width: 100%;
-        border-radius: 1rem 1rem 0 0;
-        max-height: 90vh;
-        transform: translateY(100%);
-        transition: transform 0.3s ease-out;
-    }
-    
-    #modal.active #modal-content {
-        transform: translateY(0);
-    }
+html.dark #modal-content {
+    background: #1f2937;
 }
 
-/* Desktop: Centered Modal */
+#modal.active #modal-content {
+    transform: translateY(0);
+}
+
+/* Desktop: Modal centrée */
 @media (min-width: 769px) {
     #modal {
+        align-items: center;
         padding: 1rem;
     }
     
     #modal-content {
-        max-height: 90vh;
+        max-width: 28rem;
+        border-radius: 0.5rem;
+        padding: 2rem;
+        transform: none;
     }
 }
-        
-        /* Swipe to delete */
-        .swipe-container {
-            overflow: hidden;
-            position: relative;
-        }
-        .swipe-content {
-            will-change: transform;
-            transition: transform 0.3s ease-out;
-            cursor: grab;
-        }
-        .swipe-actions {
-            position: absolute;
-            top: 0;
-            right: 0;
-            height: 100%;
-            display: flex;
-            align-items: center;
-            transform: translateX(100%);
-        }
 
-        .date-filter-btn.active {
-            background-color: #DC2626;
-            color: white;
-        }
-
-        /* Correction modal iPhone */
-@media (max-width: 768px) {
-    #modal-content {
-        max-height: 90vh !important;
-        overflow-y: auto !important;
-        -webkit-overflow-scrolling: touch !important;
-    }
+/* Bloquer le scroll du body */
+body.modal-open {
+    overflow: hidden !important;
+    position: fixed !important;
+    width: 100% !important;
+    height: 100% !important;
 }
 
         /* Bottom Navigation Bar (Mobile only) */
@@ -1193,14 +1170,18 @@ window.nav = function(app, lat, lon) {
             const newTheme = appState.ui.theme === 'dark' ? 'light' : 'dark';
             applyTheme(newTheme);
         }
-    function openModal(charge = null) {
+function openModal(charge = null) {
     // Bloquer le scroll du body
-    document.body.style.overflow = 'hidden';
-    document.body.style.position = 'fixed';
-    document.body.style.width = '100%';
+    document.body.classList.add('modal-open');
     
     modal.classList.remove('hidden');
-    modal.classList.add('active');
+    
+    // Petit délai pour l'animation
+    requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+            modal.classList.add('active');
+        });
+    });
 
     
     document.getElementById('modal-title').textContent = charge ? 'Modifier la recharge' : 'Ajouter une recharge';
@@ -1247,14 +1228,14 @@ window.nav = function(app, lat, lon) {
     updateTotalChargeCost();
 }
 
-    function closeModal() {
-    // Débloquer le scroll du body
-    document.body.style.overflow = '';
-    document.body.style.position = '';
-    document.body.style.width = '';
-    
-    modal.classList.add('hidden');
+function closeModal() {
     modal.classList.remove('active');
+    
+    // Attendre la fin de l'animation
+    setTimeout(() => {
+        modal.classList.add('hidden');
+        document.body.classList.remove('modal-open');
+    }, 300);
     
     chargeForm.reset();
     modalFavoritesSelect.selectedIndex = 0;
