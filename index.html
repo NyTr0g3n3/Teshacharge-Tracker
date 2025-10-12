@@ -336,6 +336,15 @@ input:focus, select:focus {
             color: white;
         }
 
+        /* Correction modal iPhone */
+@media (max-width: 768px) {
+    #modal-content {
+        max-height: 90vh !important;
+        overflow-y: auto !important;
+        -webkit-overflow-scrolling: touch !important;
+    }
+}
+
         /* Bottom Navigation Bar (Mobile only) */
 #bottom-nav {
     position: fixed;
