@@ -293,37 +293,41 @@ input:focus, select:focus {
             100% { transform: rotate(360deg); }
         }
         
-/* Bottom Sheet Modal - CORRECTIONS */
+/* Bottom Sheet Modal */
+#modal {
+    touch-action: none; /* Empêche le drag sur mobile */
+}
+
+#modal-content {
+    user-select: none; /* Empêche la sélection */
+    -webkit-user-drag: none; /* Empêche le drag sur Safari */
+}
+
 @media (max-width: 768px) {
+    #modal.active .modal-content {
+        animation: slide-up 0.3s ease-out forwards;
+    }
+    #modal .modal-content {
+        animation: slide-down 0.3s ease-out forwards;
+    }
+    @keyframes slide-up {
+        from { transform: translateY(100%); }
+        to { transform: translateY(0); }
+    }
+    @keyframes slide-down {
+        from { transform: translateY(0); }
+        to { transform: translateY(100%); }
+    }
+}
+
+@media (min-width: 769px) {
     #modal {
-        align-items: flex-end; /* Force l'alignement en bas */
+        align-items: center; /* Centre verticalement sur desktop */
     }
     
     #modal-content {
-        position: fixed;
-        bottom: 0;
-        left: 0;
-        right: 0;
-        width: 100%;
-        max-height: 90vh; /* Limite la hauteur à 90% de l'écran */
-        overflow-y: auto; /* Scroll interne si contenu trop long */
-        border-radius: 16px 16px 0 0;
-        transform: translateY(100%);
-        transition: transform 0.3s ease-out;
-        /* Empêche le déplacement */
-        touch-action: pan-y; /* Permet uniquement le scroll vertical interne */
-    }
-    
-    #modal.active #modal-content {
-        transform: translateY(0);
-    }
-    
-    /* Empêche le scroll du body quand la modal est ouverte */
-    body.modal-open {
-        overflow: hidden;
-        position: fixed;
-        width: 100%;
-        height: 100%;
+        position: relative !important; /* Force position relative */
+        bottom: auto !important; /* Annule le positionnement bottom */
     }
 }
 
@@ -790,7 +794,7 @@ html.dark #bottom-nav {
 
     <!-- Modal / Bottom Sheet -->
     <div id="modal-overlay" class="fixed inset-0 bg-black bg-opacity-75 hidden z-40"></div>
-    <div id="modal" class="fixed inset-0 flex items-end md:items-center justify-center md:p-4 z-50 pointer-events-none hidden [&.active]:pointer-events-auto">
+    <div id="modal" class="fixed inset-0 flex items-end md:items-center justify-center md:p-4 z-50 pointer-events-none hidden [&.active]:pointer-events-auto overflow-hidden">
         <div id="modal-content" class="modal-content bg-white dark:bg-gray-800 md:rounded-lg shadow-2xl w-full max-w-md p-6 md:p-8 pointer-events-auto">
             <h2 id="modal-title" class="text-2xl font-bold text-gray-900 dark:text-white mb-6">Ajouter une recharge</h2>
             <form id="charge-form">
@@ -1188,6 +1192,10 @@ function openModal(charge = null) {
     modal.classList.remove('hidden');
     modal.classList.add('active');
     modalOverlay.classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+    document.body.style.position = 'fixed';
+    document.body.style.width = '100%';
+
     
     document.getElementById('modal-title').textContent = charge ? 'Modifier la recharge' : 'Ajouter une recharge';
     deleteBtnModal.classList.toggle('hidden', !charge);
@@ -1237,6 +1245,10 @@ function closeModal() {
     modal.classList.add('hidden');
     modal.classList.remove('active');
     modalOverlay.classList.add('hidden');
+    document.body.style.overflow = '';
+    document.body.style.position = '';
+    document.body.style.width = '';
+    
     chargeForm.reset();
     modalFavoritesSelect.selectedIndex = 0;
     currentPhotoBase64 = null;
