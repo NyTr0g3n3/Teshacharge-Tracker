@@ -345,6 +345,49 @@ input:focus, select:focus {
     }
 }
 
+/* Bottom Sheet Modal - CORRECTIONS */
+@media (max-width: 768px) {
+    #modal {
+        align-items: flex-end; /* Force l'alignement en bas */
+    }
+    
+    #modal-content {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        width: 100%;
+        max-height: 90vh; /* Limite la hauteur à 90% de l'écran */
+        overflow-y: auto; /* Scroll interne si contenu trop long */
+        border-radius: 16px 16px 0 0;
+        transform: translateY(100%);
+        transition: transform 0.3s ease-out;
+        /* Empêche le déplacement */
+        touch-action: pan-y; /* Permet uniquement le scroll vertical interne */
+    }
+    
+    #modal.active #modal-content {
+        transform: translateY(0);
+    }
+    
+    /* Empêche le scroll du body quand la modal est ouverte */
+    body.modal-open {
+        overflow: hidden;
+        position: fixed;
+        width: 100%;
+        height: 100%;
+    }
+}
+
+/* Desktop - garde le comportement centré */
+@media (min-width: 769px) {
+    #modal-content {
+        position: relative;
+        max-height: 90vh;
+        overflow-y: auto;
+    }
+}
+
         /* Bottom Navigation Bar (Mobile only) */
 #bottom-nav {
     position: fixed;
@@ -1163,7 +1206,7 @@ function openModal(charge = null) {
     modal.classList.remove('hidden');
     modal.classList.add('active');
     modalOverlay.classList.remove('hidden');
-    
+    document.body.classList.add('modal-open');
     document.getElementById('modal-title').textContent = charge ? 'Modifier la recharge' : 'Ajouter une recharge';
     deleteBtnModal.classList.toggle('hidden', !charge);
     
@@ -1216,6 +1259,7 @@ function closeModal() {
     modalFavoritesSelect.selectedIndex = 0;
     currentPhotoBase64 = null;
     document.getElementById('photo').value = '';
+    document.body.classList.remove('modal-open');
 }
         function renderChargesAccordion(filter = '', dateFilter = 'all') {
             historyAccordion.innerHTML = '';
