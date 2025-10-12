@@ -295,48 +295,54 @@ input:focus, select:focus {
         
 /* Bottom Sheet Modal */
 #modal {
-    touch-action: none; /* Empêche le drag sur mobile */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(0, 0, 0, 0.75);
+}
+
+#modal.hidden {
+    display: none;
 }
 
 #modal-content {
-    user-select: none; /* Empêche la sélection */
-    -webkit-user-drag: none; /* Empêche le drag sur Safari */
+    position: relative;
+    touch-action: pan-y; /* Permet le scroll vertical mais pas le drag horizontal */
+    overscroll-behavior: contain; /* Empêche le scroll de déborder sur le body */
 }
 
+/* Mobile: Bottom Sheet */
 @media (max-width: 768px) {
-    #modal.active .modal-content {
-        animation: slide-up 0.3s ease-out forwards;
-    }
-    #modal .modal-content {
-        animation: slide-down 0.3s ease-out forwards;
-    }
-    @keyframes slide-up {
-        from { transform: translateY(100%); }
-        to { transform: translateY(0); }
-    }
-    @keyframes slide-down {
-        from { transform: translateY(0); }
-        to { transform: translateY(100%); }
-    }
-}
-
-@media (min-width: 769px) {
     #modal {
-        align-items: center; /* Centre verticalement sur desktop */
+        align-items: flex-end;
+        padding: 0;
     }
     
     #modal-content {
-        position: relative !important; /* Force position relative */
-        bottom: auto !important; /* Annule le positionnement bottom */
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        max-width: 100%;
+        border-radius: 1rem 1rem 0 0;
+        max-height: 90vh;
+        transform: translateY(100%);
+        transition: transform 0.3s ease-out;
+    }
+    
+    #modal.active #modal-content {
+        transform: translateY(0);
     }
 }
 
-/* Desktop - garde le comportement centré */
+/* Desktop: Centered Modal */
 @media (min-width: 769px) {
+    #modal {
+        padding: 1rem;
+    }
+    
     #modal-content {
-        position: relative;
         max-height: 90vh;
-        overflow-y: auto;
     }
 }
         
@@ -793,9 +799,8 @@ html.dark #bottom-nav {
 </div>
 
     <!-- Modal / Bottom Sheet -->
-    <div id="modal-overlay" class="fixed inset-0 bg-black bg-opacity-75 hidden z-40"></div>
-    <div id="modal" class="fixed inset-0 flex items-end md:items-center justify-center md:p-4 z-50 pointer-events-none hidden [&.active]:pointer-events-auto overflow-hidden">
-        <div id="modal-content" class="modal-content bg-white dark:bg-gray-800 md:rounded-lg shadow-2xl w-full max-w-md p-6 md:p-8 pointer-events-auto">
+    <div id="modal" class="fixed inset-0 z-50 hidden">
+        <div id="modal-content" class="modal-content bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-md p-6 md:p-8 max-h-[90vh] overflow-y-auto">
             <h2 id="modal-title" class="text-2xl font-bold text-gray-900 dark:text-white mb-6">Ajouter une recharge</h2>
             <form id="charge-form">
                 <div class="mb-4">
@@ -1188,13 +1193,14 @@ window.nav = function(app, lat, lon) {
             const newTheme = appState.ui.theme === 'dark' ? 'light' : 'dark';
             applyTheme(newTheme);
         }
-function openModal(charge = null) {
-    modal.classList.remove('hidden');
-    modal.classList.add('active');
-    modalOverlay.classList.remove('hidden');
+    function openModal(charge = null) {
+    // Bloquer le scroll du body
     document.body.style.overflow = 'hidden';
     document.body.style.position = 'fixed';
     document.body.style.width = '100%';
+    
+    modal.classList.remove('hidden');
+    modal.classList.add('active');
 
     
     document.getElementById('modal-title').textContent = charge ? 'Modifier la recharge' : 'Ajouter une recharge';
@@ -1241,13 +1247,14 @@ function openModal(charge = null) {
     updateTotalChargeCost();
 }
 
-function closeModal() {
-    modal.classList.add('hidden');
-    modal.classList.remove('active');
-    modalOverlay.classList.add('hidden');
+    function closeModal() {
+    // Débloquer le scroll du body
     document.body.style.overflow = '';
     document.body.style.position = '';
     document.body.style.width = '';
+    
+    modal.classList.add('hidden');
+    modal.classList.remove('active');
     
     chargeForm.reset();
     modalFavoritesSelect.selectedIndex = 0;
