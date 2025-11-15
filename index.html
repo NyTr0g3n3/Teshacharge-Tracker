@@ -1744,10 +1744,10 @@ function checkMilestones() {
                 latitude: document.getElementById('latitude').value || null,
                 longitude: document.getElementById('longitude').value || null
             };
-            if(chargeData.kwh < 0 || chargeData.costPerKwh < 0) {
-                showToast("Les valeurs de kWh et de coût doivent être positives.", "error");
-                return;
-            }
+            if (isNaN(chargeData.kwh) || isNaN(chargeData.costPerKwh) || chargeData.kwh < 0 || chargeData.costPerKwh < 0) {
+    showToast("Les valeurs de kWh et de coût doivent être des nombres positifs.", "error");
+    return;
+}
 
             try {
                 if (chargeId) {
@@ -1813,6 +1813,22 @@ function checkMilestones() {
                 return;
             }
 
+            const sortedStats = [...appState.monthlyStats].sort((a,b) => a.month.localeCompare(b.month));
+
+            const prevStat = sortedStats.filter(s => s.month < monthValue).pop(); 
+
+            if (prevStat && mileage < prevStat.endOfMonthMileage) {
+                showToast(`Le kilométrage (${mileage} km) ne peut pas être inférieur à celui du mois précédent (${prevStat.endOfMonthMileage} km).`, "error");
+            return;
+            }
+
+// (Optionnel mais bien) Vérifie aussi par rapport au mois suivant, si on modifie une vieille entrée
+const nextStat = sortedStats.find(s => s.month > monthValue);
+if (nextStat && mileage > nextStat.endOfMonthMileage) {
+    showToast(`Le kilométrage (${mileage} km) ne peut pas être supérieur à celui du mois suivant (${nextStat.endOfMonthMileage} km).`, "error");
+    return;
+}
+            
             const docId = monthValue; // Use YYYY-MM-DD as doc ID
             const docData = { month: monthValue, endOfMonthMileage: mileage };
             
