@@ -1934,7 +1934,7 @@ btn.onclick = () => {
     favoritesList.querySelectorAll('.delete-favorite-btn').forEach(btn => btn.addEventListener('click', handleDeleteFavorite));
 }
         
-            function renderVisitedStations() {
+    function renderVisitedStations() {
     const visitedList = document.getElementById('visited-stations-list');
     visitedList.innerHTML = '';
     
@@ -2034,13 +2034,20 @@ li.innerHTML = `
     // Ajouter les event listeners pour les boutons "Ajouter aux favoris"
         visitedList.querySelectorAll('.add-to-favorites-btn').forEach(btn => {
             btn.addEventListener('click', async (e) => {
-        const isFav = btn.dataset.isFavorite === 'true';
+        let isFav = btn.dataset.isFavorite === 'true';
         const name = btn.dataset.name;
         const icon = btn.querySelector('i');
         
         // Animation
         icon.classList.add('star-animate');
         setTimeout(() => icon.classList.remove('star-animate'), 300);
+
+            const newState = !isFav;
+    btn.dataset.isFavorite = newState;
+    icon.className = `${newState ? 'fas' : 'far'} fa-star text-xl`;
+    btn.classList.toggle('text-yellow-500', newState);
+    btn.classList.toggle('text-gray-300', !newState);
+    btn.classList.toggle('hover:text-yellow-500', !newState);
         
         try {
             if (isFav) {
@@ -2071,6 +2078,11 @@ li.innerHTML = `
         } catch (error) {
             console.error("Error toggling favorite:", error);
             showToast("Erreur lors de la modification", "error");
+            btn.dataset.isFavorite = isFav; // Annule
+        icon.className = `${isFav ? 'fas' : 'far'} fa-star text-xl`;
+        btn.classList.toggle('text-yellow-500', isFav);
+        btn.classList.toggle('text-gray-300', !isFav);
+        btn.classList.toggle('hover:text-yellow-500', !isFav);
         }
     });
 });
@@ -2403,6 +2415,11 @@ const favData = {
             const content = el.querySelector('.swipe-content');
             
             const handleGestureStart = (e) => {
+                document.querySelectorAll('.swipe-content[style*="translateX"]').forEach(otherContent => {
+                    if (otherContent !== content) {
+                otherContent.style.transform = 'translateX(0)';
+                }
+        });
                 startX = e.touches ? e.touches[0].clientX : e.clientX;
                 isSwiping = true;
                 content.style.transition = 'none';
