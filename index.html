@@ -1330,7 +1330,6 @@ function closeModal() {
             });
 
             historyAccordion.querySelectorAll('.edit-btn').forEach(btn => btn.addEventListener('click', (e) => handleEdit(e, btn.dataset.id)));
-            historyAccordion.querySelectorAll('.delete-btn').forEach(btn => btn.addEventListener('click', (e) => handleDelete(e, btn.dataset.id)));
             historyAccordion.querySelectorAll('.swipe-container').forEach(addSwipeToDelete);
         }
 
@@ -2141,7 +2140,6 @@ visitedList.querySelectorAll('.edit-visited-btn').forEach(btn => {
             });
 
             mileageList.querySelectorAll('.edit-mileage-btn').forEach(btn => btn.addEventListener('click', handleEditMileage));
-            mileageList.querySelectorAll('.delete-mileage-btn').forEach(btn => btn.addEventListener('click', handleDeleteMileage));
             mileageList.querySelectorAll('.swipe-container').forEach(addSwipeToDelete);
         }
 
@@ -2410,68 +2408,100 @@ const favData = {
             }
         }
 
-        function addSwipeToDelete(el) {
-    let startX, currentX, isSwiping = false;
-    let currentTranslate = 0; // NOUVEAU: Mémorise l'état actuel (ouvert/fermé)
-    const content = el.querySelector('.swipe-content');
-    
-    const handleGestureStart = (e) => {
-        // Ça, c'est notre ajout de la dernière fois (il est correct et on le garde) :
-        document.querySelectorAll('.swipe-content[style*="translateX"]').forEach(otherContent => {
-            if (otherContent !== content) {
-                otherContent.style.transform = 'translateX(0)';
+function addSwipeToDelete(el) {
+            let startX, currentX, isSwiping = false;
+            const content = el.querySelector('.swipe-content');
+            
+            // On récupère l'ID ou la donnée pertinente DEPUIS le bouton d'action
+            const deleteBtn = el.querySelector('.delete-btn'); // Pour l'historique
+            const deleteMileageBtn = el.querySelector('.delete-mileage-btn'); // Pour le kilométrage
+
+            let dataId = null;
+            let deleteType = null;
+
+            if (deleteBtn) {
+                dataId = deleteBtn.dataset.id;
+                deleteType = 'charge';
+                // On clone le bouton pour être sûr de supprimer tout ancien listener
+                deleteBtn.replaceWith(deleteBtn.cloneNode(true));
+            } else if (deleteMileageBtn) {
+                dataId = deleteMileageBtn.dataset.month; // C'est le 'month' ici
+                deleteType = 'mileage';
+                // On clone le bouton
+                deleteMileageBtn.replaceWith(deleteMileageBtn.cloneNode(true));
             }
-        });
 
-        startX = e.touches ? e.touches[0].clientX : e.clientX;
-        isSwiping = true;
-        content.style.transition = 'none';
-        
-        // NOUVEAU: On lit la position de l'élément au début du swipe
-        const transform = window.getComputedStyle(content).transform;
-        if (transform !== 'none') {
-            currentTranslate = new DOMMatrix(transform).m41; // Récupère le translateX
-        } else {
-            currentTranslate = 0;
+            if (!dataId) return; // Si pas de bouton suppression, on n'attache pas le swipe
+
+            const handleGestureStart = (e) => {
+                // Ferme tous les autres swipes ouverts
+                document.querySelectorAll('.swipe-content[style*="translateX"]').forEach(otherContent => {
+                    if (otherContent !== content) {
+                        otherContent.style.transform = 'translateX(0)';
+                    }
+                });
+
+                startX = e.touches ? e.touches[0].clientX : e.clientX;
+                isSwiping = true;
+                content.style.transition = 'none';
+            };
+            
+            const handleGestureMove = (e) => {
+                if (!isSwiping) return;
+                currentX = e.touches ? e.touches[0].clientX : e.clientX;
+                let diff = currentX - startX;
+
+                // On ne swipe que vers la gauche, et pas trop loin
+                if (diff > 0) diff = 0; // Bloque le swipe vers la droite (depuis 0)
+                if (diff < -100) diff = -100; // Limite le swipe
+
+                content.style.transform = `translateX(${diff}px)`;
+            };
+            
+            const handleGestureEnd = () => {
+                if (!isSwiping) return;
+                isSwiping = false;
+                content.style.transition = 'transform 0.3s ease-out';
+                
+                const transform = window.getComputedStyle(content).transform;
+                const finalTranslate = new DOMMatrix(transform).m41;
+
+                // Si le swipe a dépassé le seuil de -50px
+                if (finalTranslate < -50) {
+                    // On verrouille visuellement le swipe en position "ouverte"
+                    content.style.transform = 'translateX(-80px)';
+                    
+                    // On déclenche la confirmation
+                    if (deleteType === 'charge') {
+                        openConfirmModal('Supprimer la recharge ?', 'Cette action est définitive.', () => {
+                            const docRef = doc(appState.firebase.db, `users/${appState.firebase.userId}/charges`, dataId);
+                            deleteDoc(docRef);
+                            showToast("Recharge supprimée.");
+                            // L'UI se mettra à jour grâce à onSnapshot
+                        });
+                    } else if (deleteType === 'mileage') {
+                        const monthName = parseUTCDate(dataId).toLocaleString('fr-FR', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+                        openConfirmModal('Supprimer ce kilométrage ?', `Voulez-vous vraiment supprimer les données pour ${monthName} ?`, () => {
+                            const docRef = doc(appState.firebase.db, `users/${appState.firebase.userId}/monthlyStats`, dataId);
+                            deleteDoc(docRef);
+                            showToast("Données de kilométrage supprimées.");
+                        });
+                    }
+                    
+                    // Que l'utilisateur confirme ou annule, on referme le swipe après un court délai
+                    setTimeout(() => {
+                        content.style.transform = 'translateX(0)';
+                    }, 300);
+                    
+                } else { // Si le swipe est trop court, on annule et on referme
+                    content.style.transform = 'translateX(0)';
+                }
+            };
+
+            content.addEventListener('touchstart', handleGestureStart, { passive: true });
+            content.addEventListener('touchmove', handleGestureMove, { passive: true });
+            content.addEventListener('touchend', handleGestureEnd);
         }
-    };
-    
-    const handleGestureMove = (e) => {
-        if (!isSwiping) return;
-        currentX = e.touches ? e.touches[0].clientX : e.clientX;
-        const diff = currentX - startX;
-        
-        // NOUVEAU: Le mouvement est la position + le glissement
-        let newTranslate = currentTranslate + diff;
-
-        // On limite le swipe (pas plus loin que 0, pas plus loin que -100px)
-        if (newTranslate > 0) newTranslate = 0; // Bloquer à droite (position fermée)
-        if (newTranslate < -100) newTranslate = -100; // Bloquer à gauche
-
-        content.style.transform = `translateX(${newTranslate}px)`;
-    };
-    
-    const handleGestureEnd = () => {
-        if (!isSwiping) return;
-        isSwiping = false;
-        content.style.transition = 'transform 0.3s ease-out';
-        
-        // NOUVEAU: Logique de "snap" (aimantation)
-        const transform = window.getComputedStyle(content).transform;
-        const finalTranslate = new DOMMatrix(transform).m41; // Position à la fin du swipe
-
-        // Si on a dépassé la moitié (-40px), on "snap" ouvert
-        if (finalTranslate < -40) { 
-            content.style.transform = 'translateX(-80px)'; // Position ouverte
-        } else { // Sinon, on "snap" fermé
-            content.style.transform = 'translateX(0)'; // Position fermée
-        }
-    };
-
-    content.addEventListener('touchstart', handleGestureStart, { passive: true });
-    content.addEventListener('touchmove', handleGestureMove, { passive: true });
-    content.addEventListener('touchend', handleGestureEnd);
-}
         
         
         // --- Event Listeners ---
