@@ -1160,6 +1160,7 @@ window.nav = function(app, lat, lon) {
             applyTheme(newTheme);
         }
 function openModal(charge = null) {
+    document.documentElement.classList.add('overflow-hidden');
     modal.classList.remove('hidden');
     modal.classList.add('active');
     modalOverlay.classList.remove('hidden');
@@ -1209,6 +1210,7 @@ function openModal(charge = null) {
 }
 
 function closeModal() {
+    document.documentElement.classList.remove('overflow-hidden');
     modal.classList.add('hidden');
     modal.classList.remove('active');
     modalOverlay.classList.add('hidden');
