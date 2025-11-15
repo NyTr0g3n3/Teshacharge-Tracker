@@ -3007,17 +3007,22 @@ const PDFExporter = {
             let yPos = 20;
             const colorMode = options.colorMode;
             
-            // En-tête
-            yPos = this.addHeader(doc, options, yPos, colorMode);
-            
-            // Résumé financier
+          
+            const efficiencyData = this.getMonthlyEfficiency(filteredCharges, options.dateStart, options.dateEnd);
+            const totalKmDriven = efficiencyData.reduce((sum, month) => sum + month.kmDriven, 0);
+            const realTotalCost = filteredCharges.reduce((sum, c) => sum + (c.kwh * c.costPerKwh), 0);
+            const gasPrice = parseFloat(document.getElementById('pdf-gas-price').value) || 1.80;
+            const gasConsumption = parseFloat(document.getElementById('pdf-gas-consumption').value) || 7.0;
+
+                yPos = this.addHeader(doc, options, yPos, colorMode);
+
             if (options.includeSummary) {
-                yPos = await this.addFinancialSummary(doc, filteredCharges, yPos, colorMode);
+    
+                yPos = await this.addFinancialSummary(doc, filteredCharges, yPos, colorMode, realTotalCost, totalKmDriven, gasPrice, gasConsumption);
             }
-            
-            // Efficacité énergétique
             if (options.includeEfficiency) {
-                yPos = await this.addEfficiencySection(doc, filteredCharges, options, yPos, colorMode);
+    
+                yPos = await this.addEfficiencySection(doc, efficiencyData, yPos, colorMode);
             }
             
             // Analyse par borne
@@ -3094,7 +3099,7 @@ const PDFExporter = {
         return yPos + 30;
     },
     
-    async addFinancialSummary(doc, charges, yPos, colorMode) {
+    async addFinancialSummary(doc, charges, yPos, colorMode, realTotalCost, totalKmDriven, gasPrice, gasConsumption) {
         if (yPos > 240) {
             doc.addPage();
             yPos = 20;
@@ -3131,7 +3136,7 @@ const PDFExporter = {
             { label: 'Nombre de recharges', value: nbCharges, x: 20, y: yPos + 28 },
             { label: 'Coût moyen/kWh', value: `${avgCostPerKwh.toFixed(3)} €`, x: 110, y: yPos + 8 },
             { label: 'Coût moyen/recharge', value: `${avgCostPerCharge.toFixed(2)} €`, x: 110, y: yPos + 18 },
-            { label: 'Économies (vs essence)', value: this.calculateSavings(totalKwh), x: 110, y: yPos + 28 }
+            { label: 'Économies (vs essence)', value: this.calculateSavings(totalCost, totalKmDriven, gasPrice, gasConsumption), x: 110, y: yPos + 28 }
         ];
         
         metrics.forEach(m => {
@@ -3149,16 +3154,16 @@ const PDFExporter = {
         return yPos + 55;
     },
     
-    calculateSavings(totalKwh) {
-        const kmEquivalent = totalKwh * 6.67;
-        const litersEquivalent = (kmEquivalent / 100) * 7;
-        const gasolineCost = litersEquivalent * 1.8;
-        const electricCost = totalKwh * 0.25;
-        const savings = gasolineCost - electricCost;
-        return `~${savings.toFixed(0)} €`;
+    calculateSavings(realElectricCost, realKmDriven, gasPrice, gasConsumption) {
+    if (realKmDriven <= 0) {
+        return "~0 € (pas de km)";
+    }
+    const gasCost = (realKmDriven / 100) * gasConsumption * gasPrice;
+    const savings = gasCost - realElectricCost;
+    return `~${savings.toFixed(0)} €`;
     },
     
-    async addEfficiencySection(doc, charges, options, yPos, colorMode) {
+    async addEfficiencySection(doc, monthlyData, yPos, colorMode) {
         if (yPos > 200) {
             doc.addPage();
             yPos = 20;
@@ -3169,8 +3174,6 @@ const PDFExporter = {
         doc.setTextColor(colorMode ? 220 : 0, colorMode ? 38 : 0, colorMode ? 38 : 0);
         doc.text('Efficacité Énergétique', 15, yPos);
         yPos += 10;
-        
-        const monthlyData = this.getMonthlyEfficiency(charges, options.dateStart, options.dateEnd);
         
         if (monthlyData.length === 0) {
             doc.setFontSize(10);
@@ -3650,6 +3653,16 @@ document.getElementById('pdf-export-form').addEventListener('submit', async (e) 
                     <i class="fas fa-sliders-h text-purple-600 mr-2"></i>
                     Options avancées
                 </h3>
+                <div class="grid grid-cols-2 gap-4 mb-4">
+    <div>
+        <label class="block text-sm text-gray-600 dark:text-gray-400 mb-2">Prix Essence (€/L)</label>
+        <input type="number" step="0.01" id="pdf-gas-price" class="w-full bg-white dark:bg-gray-800 text-gray-900 dark:text-white p-2 rounded border border-gray-300 dark:border-gray-600" value="1.80">
+    </div>
+    <div>
+        <label class="block text-sm text-gray-600 dark:text-gray-400 mb-2">Conso. Essence (L/100km)</label>
+        <input type="number" step="0.1" id="pdf-gas-consumption" class="w-full bg-white dark:bg-gray-800 text-gray-900 dark:text-white p-2 rounded border border-gray-300 dark:border-gray-600" value="7.0">
+    </div>
+</div>
                 <div class="space-y-2">
                     <label class="flex items-center gap-2 cursor-pointer p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded">
                         <input type="checkbox" id="pdf-color-mode" checked class="w-4 h-4 text-red-600 rounded focus:ring-red-500">
