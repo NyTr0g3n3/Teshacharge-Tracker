@@ -2411,43 +2411,67 @@ const favData = {
         }
 
         function addSwipeToDelete(el) {
-            let startX, currentX, isSwiping = false;
-            const content = el.querySelector('.swipe-content');
-            
-            const handleGestureStart = (e) => {
-                document.querySelectorAll('.swipe-content[style*="translateX"]').forEach(otherContent => {
-                    if (otherContent !== content) {
+    let startX, currentX, isSwiping = false;
+    let currentTranslate = 0; // NOUVEAU: Mémorise l'état actuel (ouvert/fermé)
+    const content = el.querySelector('.swipe-content');
+    
+    const handleGestureStart = (e) => {
+        // Ça, c'est notre ajout de la dernière fois (il est correct et on le garde) :
+        document.querySelectorAll('.swipe-content[style*="translateX"]').forEach(otherContent => {
+            if (otherContent !== content) {
                 otherContent.style.transform = 'translateX(0)';
-                }
+            }
         });
-                startX = e.touches ? e.touches[0].clientX : e.clientX;
-                isSwiping = true;
-                content.style.transition = 'none';
-            };
-            const handleGestureMove = (e) => {
-                if (!isSwiping) return;
-                currentX = e.touches ? e.touches[0].clientX : e.clientX;
-                const diff = currentX - startX;
-                if (diff < 0 && diff > -100) { // Swipe left only
-                    content.style.transform = `translateX(${diff}px)`;
-                }
-            };
-            const handleGestureEnd = () => {
-                if (!isSwiping) return;
-                isSwiping = false;
-                content.style.transition = 'transform 0.3s ease-out';
-                const diff = currentX - startX;
-                if (diff < -50) { // Threshold
-                    content.style.transform = 'translateX(-80px)'; // Expose delete button
-                } else {
-                    content.style.transform = 'translateX(0)';
-                }
-            };
 
-            content.addEventListener('touchstart', handleGestureStart, { passive: true });
-            content.addEventListener('touchmove', handleGestureMove, { passive: true });
-            content.addEventListener('touchend', handleGestureEnd);
+        startX = e.touches ? e.touches[0].clientX : e.clientX;
+        isSwiping = true;
+        content.style.transition = 'none';
+        
+        // NOUVEAU: On lit la position de l'élément au début du swipe
+        const transform = window.getComputedStyle(content).transform;
+        if (transform !== 'none') {
+            currentTranslate = new DOMMatrix(transform).m41; // Récupère le translateX
+        } else {
+            currentTranslate = 0;
         }
+    };
+    
+    const handleGestureMove = (e) => {
+        if (!isSwiping) return;
+        currentX = e.touches ? e.touches[0].clientX : e.clientX;
+        const diff = currentX - startX;
+        
+        // NOUVEAU: Le mouvement est la position + le glissement
+        let newTranslate = currentTranslate + diff;
+
+        // On limite le swipe (pas plus loin que 0, pas plus loin que -100px)
+        if (newTranslate > 0) newTranslate = 0; // Bloquer à droite (position fermée)
+        if (newTranslate < -100) newTranslate = -100; // Bloquer à gauche
+
+        content.style.transform = `translateX(${newTranslate}px)`;
+    };
+    
+    const handleGestureEnd = () => {
+        if (!isSwiping) return;
+        isSwiping = false;
+        content.style.transition = 'transform 0.3s ease-out';
+        
+        // NOUVEAU: Logique de "snap" (aimantation)
+        const transform = window.getComputedStyle(content).transform;
+        const finalTranslate = new DOMMatrix(transform).m41; // Position à la fin du swipe
+
+        // Si on a dépassé la moitié (-40px), on "snap" ouvert
+        if (finalTranslate < -40) { 
+            content.style.transform = 'translateX(-80px)'; // Position ouverte
+        } else { // Sinon, on "snap" fermé
+            content.style.transform = 'translateX(0)'; // Position fermée
+        }
+    };
+
+    content.addEventListener('touchstart', handleGestureStart, { passive: true });
+    content.addEventListener('touchmove', handleGestureMove, { passive: true });
+    content.addEventListener('touchend', handleGestureEnd);
+}
         
         
         // --- Event Listeners ---
