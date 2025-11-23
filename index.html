@@ -2926,6 +2926,7 @@ document.querySelectorAll('.visited-sort-btn').forEach(btn => {
                             populateFavoriteButtons();
                             populateFavoriteSelect();
                             renderVisitedStations();
+                            updateStationSuggestions();
                         break;
                     }
                 });
@@ -2939,12 +2940,16 @@ document.querySelectorAll('.visited-sort-btn').forEach(btn => {
         }
 
         function updateStationSuggestions() {
-            const uniqueStations = [...new Set(appState.charges.map(c => c.station))].sort();
-            const datalist = document.getElementById('station-suggestions');
-            const datalistQuick = document.getElementById('station-suggestions-quick');
-            datalist.innerHTML = uniqueStations.map(s => `<option value="${s}">`).join('');
-            datalistQuick.innerHTML = uniqueStations.map(s => `<option value="${s}">`).join('');
-        }
+    const historyNames = appState.charges.map(c => c.station);
+    const favoriteNames = appState.favoriteStations.map(s => s.name);
+    const allNames = [...historyNames, ...favoriteNames];
+    const uniqueStations = [...new Set(allNames)].sort((a, b) => a.localeCompare(b));
+    const datalist = document.getElementById('station-suggestions');
+    const datalistQuick = document.getElementById('station-suggestions-quick');
+    const optionsHTML = uniqueStations.map(s => `<option value="${s}">`).join('');
+    if (datalist) datalist.innerHTML = optionsHTML;
+    if (datalistQuick) datalistQuick.innerHTML = optionsHTML;
+}
 
         function updateTotalChargeCost() {
             const kwh = parseFloat(document.getElementById('kwh').value) || 0;
