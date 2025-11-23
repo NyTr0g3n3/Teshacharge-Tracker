@@ -2952,31 +2952,27 @@ document.querySelectorAll('.visited-sort-btn').forEach(btn => {
     document.getElementById('quick-total-cost').textContent = formatCurrency(total);
 }
 
-// Fonction de gestion de l'autocomplétion personnalisée
 function setupAutocomplete(inputId, listId) {
     const input = document.getElementById(inputId);
     const list = document.getElementById(listId);
 
     if (!input || !list) return;
 
-    // Fonction pour masquer la liste
     const closeList = () => list.classList.add('hidden');
 
     input.addEventListener('input', () => {
         const value = input.value.trim().toLowerCase();
         
-        // Si moins de 2 caractères, on cache
         if (value.length < 2) { 
             closeList(); 
             return; 
         }
 
-        // Récupérer et fusionner les sources (Historique + Favoris)
+        // Récupérer et fusionner les sources
         const historyNames = appState.charges.map(c => c.station);
         const favoriteNames = appState.favoriteStations.map(s => s.name);
         const allNames = [...new Set([...historyNames, ...favoriteNames])].sort();
 
-        // FILTRAGE INTELLIGENT ("Contient")
         const matches = allNames.filter(name => 
             name.toLowerCase().includes(value)
         );
@@ -2986,7 +2982,6 @@ function setupAutocomplete(inputId, listId) {
             return;
         }
 
-        // Générer le HTML de la liste
         list.innerHTML = matches.map(name => `
             <li class="p-3 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 text-gray-900 dark:text-white border-b border-gray-100 dark:border-gray-600 last:border-0 transition-colors">
                 ${name}
@@ -2998,26 +2993,58 @@ function setupAutocomplete(inputId, listId) {
         // Gestion du clic sur une suggestion
         list.querySelectorAll('li').forEach(li => {
             li.addEventListener('click', () => {
-                input.value = li.textContent.trim();
+                const selectedName = li.textContent.trim();
+                input.value = selectedName;
                 closeList();
                 
-                // Optionnel : Si c'est un favori, on pourrait pré-remplir le prix ici
-                const fav = appState.favoriteStations.find(s => s.name === input.value);
-                if (fav) {
-                    // On essaie de remplir le coût si le champ existe dans le même formulaire
-                    const form = input.closest('form');
-                    const costInput = form.querySelector('[id$="cost-per-kwh"]'); // quick-cost... ou cost...
-                    if (costInput) {
-                        costInput.value = fav.cost;
-                        // Déclencher l'input pour mettre à jour le calcul total
-                        costInput.dispatchEvent(new Event('input')); 
+                // --- DÉBUT DE LA LOGIQUE DE PRIX ---
+                const form = input.closest('form');
+                // On cible le champ coût (fonctionne pour Quick Add ET la Modale)
+                const costInput = form.querySelector('#quick-cost-per-kwh, #cost-per-kwh');
+
+                if (costInput) {
+                    let priceFound = null;
+
+                    // 1. Priorité aux favoris
+                    const fav = appState.favoriteStations.find(s => s.name === selectedName);
+                    if (fav) {
+                        priceFound = fav.cost;
+                    } 
+                    // 2. Sinon, chercher la dernière recharge dans l'historique
+                    else {
+                        // Filtrer les charges pour cette borne
+                        const stationHistory = appState.charges.filter(c => c.station === selectedName);
+                        
+                        if (stationHistory.length > 0) {
+                            // Trier par date (du plus récent au plus vieux)
+                            // Le format date est "YYYY-MM-DD", donc le tri alphanumérique fonctionne
+                            stationHistory.sort((a, b) => b.date.localeCompare(a.date));
+                            
+                            // Prendre le coût de la plus récente
+                            priceFound = stationHistory[0].costPerKwh;
+                        }
+                    }
+
+                    // 3. Appliquer le prix si trouvé
+                    if (priceFound !== null) {
+                        costInput.value = priceFound;
+                        
+                        // Déclencher l'événement 'input' pour que le "Coût total" se recalcule immédiatement
+                        costInput.dispatchEvent(new Event('input'));
+                        
+                        // Petit effet visuel vert pour confirmer l'autocomplétion
+                        const originalBg = costInput.className; // Sauvegarde (simplifié)
+                        costInput.classList.add('bg-green-100', 'dark:bg-green-900', 'transition-colors', 'duration-500');
+                        setTimeout(() => {
+                            costInput.classList.remove('bg-green-100', 'dark:bg-green-900');
+                        }, 500);
                     }
                 }
+                // --- FIN DE LA LOGIQUE DE PRIX ---
             });
         });
     });
 
-    // Fermer la liste si on clique ailleurs
     document.addEventListener('click', (e) => {
         if (!input.contains(e.target) && !list.contains(e.target)) {
             closeList();
