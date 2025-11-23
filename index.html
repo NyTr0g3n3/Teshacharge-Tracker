@@ -2960,6 +2960,7 @@ function setupAutocomplete(inputId, listId) {
 
     const closeList = () => list.classList.add('hidden');
 
+    // 1. Gestion de la saisie
     input.addEventListener('input', () => {
         const value = input.value.trim().toLowerCase();
         
@@ -2968,7 +2969,6 @@ function setupAutocomplete(inputId, listId) {
             return; 
         }
 
-        // Récupérer et fusionner les sources
         const historyNames = appState.charges.map(c => c.station);
         const favoriteNames = appState.favoriteStations.map(s => s.name);
         const allNames = [...new Set([...historyNames, ...favoriteNames])].sort();
@@ -2982,6 +2982,7 @@ function setupAutocomplete(inputId, listId) {
             return;
         }
 
+        // Génération de la liste HTML
         list.innerHTML = matches.map(name => `
             <li class="p-3 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 text-gray-900 dark:text-white border-b border-gray-100 dark:border-gray-600 last:border-0 transition-colors">
                 ${name}
@@ -2989,67 +2990,75 @@ function setupAutocomplete(inputId, listId) {
         `).join('');
 
         list.classList.remove('hidden');
-
-        // Gestion du clic sur une suggestion
-        list.querySelectorAll('li').forEach(li => {
-            li.addEventListener('click', () => {
-                const selectedName = li.textContent.trim();
-                input.value = selectedName;
-                closeList();
-                
-                // --- DÉBUT DE LA LOGIQUE DE PRIX ---
-                const form = input.closest('form');
-                // On cible le champ coût (fonctionne pour Quick Add ET la Modale)
-                const costInput = form.querySelector('#quick-cost-per-kwh, #cost-per-kwh');
-
-                if (costInput) {
-                    let priceFound = null;
-
-                    // 1. Priorité aux favoris
-                    const fav = appState.favoriteStations.find(s => s.name === selectedName);
-                    if (fav) {
-                        priceFound = fav.cost;
-                    } 
-                    // 2. Sinon, chercher la dernière recharge dans l'historique
-                    else {
-                        // Filtrer les charges pour cette borne
-                        const stationHistory = appState.charges.filter(c => c.station === selectedName);
-                        
-                        if (stationHistory.length > 0) {
-                            // Trier par date (du plus récent au plus vieux)
-                            // Le format date est "YYYY-MM-DD", donc le tri alphanumérique fonctionne
-                            stationHistory.sort((a, b) => b.date.localeCompare(a.date));
-                            
-                            // Prendre le coût de la plus récente
-                            priceFound = stationHistory[0].costPerKwh;
-                        }
-                    }
-
-                    // 3. Appliquer le prix si trouvé
-                    if (priceFound !== null) {
-                        costInput.value = priceFound;
-                        
-                        // Déclencher l'événement 'input' pour que le "Coût total" se recalcule immédiatement
-                        costInput.dispatchEvent(new Event('input'));
-                        
-                        // Petit effet visuel vert pour confirmer l'autocomplétion
-                        const originalBg = costInput.className; // Sauvegarde (simplifié)
-                        costInput.classList.add('bg-green-100', 'dark:bg-green-900', 'transition-colors', 'duration-500');
-                        setTimeout(() => {
-                            costInput.classList.remove('bg-green-100', 'dark:bg-green-900');
-                        }, 500);
-                    }
-                }
-                // --- FIN DE LA LOGIQUE DE PRIX ---
-            });
-        });
     });
 
+    // 2. Gestion de la sélection (Optimisé pour Mobile)
+    // On utilise 'mousedown' au lieu de 'click' sur la liste pour capturer l'événement
+    // AVANT que le champ texte ne perde le focus (blur).
+    list.addEventListener('mousedown', (e) => {
+        // Empêche le champ input de perdre le focus (garde le clavier ouvert sur mobile)
+        e.preventDefault();
+
+        // Trouver l'élément <li> cliqué (au cas où on clique sur un enfant du li)
+        const li = e.target.closest('li');
+        if (!li) return;
+
+        const selectedName = li.textContent.trim();
+        input.value = selectedName;
+        closeList();
+        
+        // --- LOGIQUE DE PRIX AUTOMATIQUE ---
+        const form = input.closest('form');
+        // Sélecteur intelligent qui marche pour le Quick Add ET la Modale
+        const costInput = form.querySelector('[id$="cost-per-kwh"]'); 
+
+        if (costInput) {
+            let priceFound = null;
+
+            // Priorité 1 : Favoris
+            const fav = appState.favoriteStations.find(s => s.name === selectedName);
+            if (fav) {
+                priceFound = fav.cost;
+            } 
+            // Priorité 2 : Historique
+            else {
+                const stationHistory = appState.charges.filter(c => c.station === selectedName);
+                if (stationHistory.length > 0) {
+                    stationHistory.sort((a, b) => b.date.localeCompare(a.date));
+                    priceFound = stationHistory[0].costPerKwh;
+                }
+            }
+
+            // Application du prix
+            if (priceFound !== null) {
+                costInput.value = priceFound;
+                // Important : dire au système que la valeur a changé pour recalculer le total
+                costInput.dispatchEvent(new Event('input'));
+                
+                // Feedback visuel (flash vert)
+                const oldClasses = costInput.className;
+                costInput.classList.add('bg-green-100', 'dark:bg-green-900');
+                setTimeout(() => {
+                   costInput.classList.remove('bg-green-100', 'dark:bg-green-900');
+                }, 500);
+            }
+        }
+    });
+
+    // 3. Fermeture au clic ailleurs (Desktop) ou perte de focus
     document.addEventListener('click', (e) => {
         if (!input.contains(e.target) && !list.contains(e.target)) {
             closeList();
         }
     });
+    
+    // Sécurité supplémentaire pour mobile : fermer si on touche ailleurs (touchstart)
+    document.addEventListener('touchstart', (e) => {
+        if (!input.contains(e.target) && !list.contains(e.target)) {
+            // Petit délai pour laisser passer un éventuel clic valide
+            setTimeout(closeList, 200); 
+        }
+    }, { passive: true });
 }
 // --- INITIALIZATION ---
 function init() {
