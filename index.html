@@ -555,11 +555,11 @@ html.dark #bottom-nav {
                                     <div id="quick-add-favorites" class="flex flex-wrap gap-2 mb-2">
                                         <!-- Favorite buttons will be injected here -->
                                     </div>
-                                    <div>
-                                        <label for="quick-station" class="sr-only">Borne</label>
-                                        <input type="text" id="quick-station" list="station-suggestions-quick" class="w-full bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white p-3 rounded-lg border border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-red-500" placeholder="Nom de la borne" required>
-                                        <datalist id="station-suggestions-quick"></datalist>
-                                    </div>
+                                    <div class="relative">
+    <label for="quick-station" class="sr-only">Borne</label>
+    <input type="text" id="quick-station" autocomplete="off" class="w-full bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white p-3 rounded-lg border border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-red-500" placeholder="Nom de la borne" required>
+    <ul id="custom-suggestions-quick" class="hidden absolute z-50 w-full bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg shadow-xl max-h-60 overflow-y-auto mt-1"></ul>
+</div>
                                     <div class="grid grid-cols-2 gap-4">
                                         <input type="number" step="0.01" min="0" id="quick-kwh" class="w-full bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white p-3 rounded-lg border border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-red-500" placeholder="kWh" required>
                                         <input type="number" step="0.001" min="0" id="quick-cost-per-kwh" class="w-full bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white p-3 rounded-lg border border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-red-500" placeholder="€/kWh" required>
@@ -779,11 +779,11 @@ html.dark #bottom-nav {
         <label for="date" class="block text-gray-500 dark:text-gray-400 mb-2">Date</label>
         <input type="date" id="date" class="w-full bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white p-3 rounded-lg border border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-red-500 appearance-none" required>
     </div>
-    <div class="mb-4">
-        <label for="station" class="block text-gray-500 dark:text-gray-400 mb-2">Borne de Recharge</label>
-        <input type="text" id="station" list="station-suggestions" class="w-full bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white p-3 rounded-lg border border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-red-500" placeholder="Ex: Bureau, Supercharger" required>
-        <datalist id="station-suggestions"></datalist>
-    </div>
+    <div class="mb-4 relative">
+    <label for="station" class="block text-gray-500 dark:text-gray-400 mb-2">Borne de Recharge</label>
+    <input type="text" id="station" autocomplete="off" class="w-full bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white p-3 rounded-lg border border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-red-500" placeholder="Ex: Bureau, Supercharger" required>
+    <ul id="custom-suggestions-modal" class="hidden absolute z-50 w-full bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg shadow-xl max-h-60 overflow-y-auto mt-1"></ul>
+</div>
     <div class="grid grid-cols-2 gap-4 mb-6">
         <div>
             <label for="kwh" class="block text-gray-500 dark:text-gray-400 mb-2">kWh Rechargés</label>
@@ -2939,18 +2939,6 @@ document.querySelectorAll('.visited-sort-btn').forEach(btn => {
             appState.listeners = [];
         }
 
-        function updateStationSuggestions() {
-    const historyNames = appState.charges.map(c => c.station);
-    const favoriteNames = appState.favoriteStations.map(s => s.name);
-    const allNames = [...historyNames, ...favoriteNames];
-    const uniqueStations = [...new Set(allNames)].sort((a, b) => a.localeCompare(b));
-    const datalist = document.getElementById('station-suggestions');
-    const datalistQuick = document.getElementById('station-suggestions-quick');
-    const optionsHTML = uniqueStations.map(s => `<option value="${s}">`).join('');
-    if (datalist) datalist.innerHTML = optionsHTML;
-    if (datalistQuick) datalistQuick.innerHTML = optionsHTML;
-}
-
         function updateTotalChargeCost() {
             const kwh = parseFloat(document.getElementById('kwh').value) || 0;
             const costPerKwh = parseFloat(document.getElementById('cost-per-kwh').value) || 0;
@@ -2962,6 +2950,79 @@ document.querySelectorAll('.visited-sort-btn').forEach(btn => {
     const costPerKwh = parseFloat(document.getElementById('quick-cost-per-kwh').value) || 0;
     const total = kwh * costPerKwh;
     document.getElementById('quick-total-cost').textContent = formatCurrency(total);
+}
+
+// Fonction de gestion de l'autocomplétion personnalisée
+function setupAutocomplete(inputId, listId) {
+    const input = document.getElementById(inputId);
+    const list = document.getElementById(listId);
+
+    if (!input || !list) return;
+
+    // Fonction pour masquer la liste
+    const closeList = () => list.classList.add('hidden');
+
+    input.addEventListener('input', () => {
+        const value = input.value.trim().toLowerCase();
+        
+        // Si moins de 2 caractères, on cache
+        if (value.length < 2) { 
+            closeList(); 
+            return; 
+        }
+
+        // Récupérer et fusionner les sources (Historique + Favoris)
+        const historyNames = appState.charges.map(c => c.station);
+        const favoriteNames = appState.favoriteStations.map(s => s.name);
+        const allNames = [...new Set([...historyNames, ...favoriteNames])].sort();
+
+        // FILTRAGE INTELLIGENT ("Contient")
+        const matches = allNames.filter(name => 
+            name.toLowerCase().includes(value)
+        );
+
+        if (matches.length === 0) {
+            closeList();
+            return;
+        }
+
+        // Générer le HTML de la liste
+        list.innerHTML = matches.map(name => `
+            <li class="p-3 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 text-gray-900 dark:text-white border-b border-gray-100 dark:border-gray-600 last:border-0 transition-colors">
+                ${name}
+            </li>
+        `).join('');
+
+        list.classList.remove('hidden');
+
+        // Gestion du clic sur une suggestion
+        list.querySelectorAll('li').forEach(li => {
+            li.addEventListener('click', () => {
+                input.value = li.textContent.trim();
+                closeList();
+                
+                // Optionnel : Si c'est un favori, on pourrait pré-remplir le prix ici
+                const fav = appState.favoriteStations.find(s => s.name === input.value);
+                if (fav) {
+                    // On essaie de remplir le coût si le champ existe dans le même formulaire
+                    const form = input.closest('form');
+                    const costInput = form.querySelector('[id$="cost-per-kwh"]'); // quick-cost... ou cost...
+                    if (costInput) {
+                        costInput.value = fav.cost;
+                        // Déclencher l'input pour mettre à jour le calcul total
+                        costInput.dispatchEvent(new Event('input')); 
+                    }
+                }
+            });
+        });
+    });
+
+    // Fermer la liste si on clique ailleurs
+    document.addEventListener('click', (e) => {
+        if (!input.contains(e.target) && !list.contains(e.target)) {
+            closeList();
+        }
+    });
 }
 // --- INITIALIZATION ---
 function init() {
@@ -3029,6 +3090,8 @@ function init() {
     initializeEventListeners();
     populateMileageMonthSelect();
     checkMileageReminder();
+    setupAutocomplete('station', 'custom-suggestions-modal');
+    setupAutocomplete('quick-station', 'custom-suggestions-quick');
 }
 
 if (document.readyState === 'loading') {
